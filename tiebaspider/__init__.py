@@ -3,10 +3,15 @@ import sys
 reload(sys)
 sys.setdefaultencoding( "utf-8" )
 
+def filterTag(tag):
+	try:
+		return tag.name == 'li' and tag.attrs.has_key('class') and tag.attrs['class'].index('j_thread_list') >= 0
+	except:
+		return False
+
 import urllib2
-import urllib
 import re
-#from BeautifulSoup import BeautifulSoup 
+#from BeautifulSoup import BeautifulSoup
 import bs4
 from bs4 import BeautifulSoup
 
@@ -35,12 +40,14 @@ def _writearticles(content, filename='articles.txt'):
 
 
 def _download(url):
-	try:
-		response = urllib2.urlopen(url).read().decode("gbk")
+	# try:
+	request = urllib2.Request(url, headers={'User-Agent': 'Mozilla/4.0(compatible:MSIE 5.5;Windows NT)'})
+	opener = urllib2.build_opener()
+	response = opener.open(request).read()
 
-	except:  
-		print 'urllib2 error'
-		return
+	# except:
+	# 	print 'urllib2 error'
+	# 	return
 
 	return response
 
@@ -49,7 +56,7 @@ def _download(url):
 class HTML_Tool:
     # 用非 贪婪模式 匹配 \t 或者 \n 或者 空格 或者 超链接 或者 图片
     BgnCharToNoneRex = re.compile("(\t|\n| |<a.*?>|<img.*?>)")
-    
+
     # 用非 贪婪模式 匹配 任意<>标签
     EndCharToNoneRex = re.compile("<.*?>")
 
@@ -60,7 +67,7 @@ class HTML_Tool:
 
     # 将一些html的符号实体转变为原始符号
     replaceTab = [("&lt;","<"),("&gt;",">"),("&amp;","&"),("&amp;","\""),("&nbsp;"," ")]
-    
+
     def Replace_Char(self,x):
         x = self.BgnCharToNoneRex.sub("",x)
         x = self.BgnPartRex.sub("\n    ",x)
@@ -68,9 +75,9 @@ class HTML_Tool:
         x = self.CharToNextTabRex.sub("\t",x)
         x = self.EndCharToNoneRex.sub("",x)
 
-        for t in self.replaceTab:  
-            x = x.replace(t[0],t[1])  
-        return x  
+        for t in self.replaceTab:
+            x = x.replace(t[0],t[1])
+        return x
 
 
 class TiebaSpider:
@@ -94,7 +101,7 @@ class TiebaSpider:
 		for tieba in tiebas:
 			for p in range(page):
 				pn = 50 * p
-				url_template = 'http://tieba.baidu.com/f?kw=%s&pn=%s' % (tieba, pn)
+				url_template = 'http://tieba.baidu.com/f?kw=%s&pn=%s' % (urllib2.quote(tieba), pn)
 				urls.append(url_template)
 
 		_writetopics(hrefs=self.hrefs)
@@ -105,12 +112,12 @@ class TiebaSpider:
 		hrefPat = re.compile(r'href=\"(.*?)\"')
 		titlePat = re.compile(r'title=\"(.*?)\"')
 
-		soup = BeautifulSoup(response)
-		topics = soup.body.findAll("div", {"class" : "threadlist_text threadlist_title j_th_tit  notStarList "})
+		soup = BeautifulSoup(response, 'lxml')
+		topics = soup.findAll(filterTag)
 		for topic in topics:
 			href = hrefPat.findall(str(topic))
 			if href:
-				self.hrefs.append(href[0])
+				self.hrefs.append(href[0] if href[0] != 'javascript:;' else href[1])
 
 
 	def download_topic(self, urls):
@@ -133,10 +140,11 @@ class TiebaSpider:
 				self.parse_articles(response)
 
 			else:
-				continue 
+				continue
 
 	def parse_articles(self, response):
-		titlePat = re.compile(r'title\:\"(.*?)\"')
+		# titlePat = re.compile(r'title\:\"(.*?)\"')
+		titlePat = re.compile(r'<title>(.+?)</title>')
 		title = titlePat.findall(str(response))
 
 		bodyPat = re.compile(r'<cc>(.*?)<\/cc>')
@@ -144,10 +152,12 @@ class TiebaSpider:
 
 		items = {}
 		if title and body:
-			data = self.myTool.Replace_Char(body[0].replace("\n","").encode('utf-8'))
+
+			data = self.myTool.Replace_Char(''.join(body).replace("\n","").encode('utf-8'))
 			items['title'] = title[0]
 			data = data.replace("\r", "")
-			items['body'] = data.split('\n')[0]
+			# items['body'] = data.split('\n')[0]
+			items['body'] = data.replace('\n', '|')
 			self.output(items)
 
 
@@ -160,9 +170,7 @@ class TiebaSpider:
 		hrefs = self.hrefs
 		urls = []
 		for href in hrefs:
-			url_template = 'http://tieba.baidu.com' + href + '?see_lz=1'
+			url_template = 'http://tieba.baidu.com' + href #+ '?see_lz=1'
 			urls.append(url_template)
 
 		self.download_articles(urls)
-
-
